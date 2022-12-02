@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>body{margin:0}</style>
+    </head>
+    <body>
+        <style>#canvas{background-color:black;}</style>
+        <canvas id="canvas"></canvas>
+        <script>
+            const COLUMNS_MEASURE = Symbol('columnsMeasure');
+            const COLUMN_SYMBOL_RENDERER = Symbol('columnSymbolRenderer');
+            const POWER_LINE_EXPAND = 0.80;
+            const POWER_NEW_LINE = 0.98;
+
+            function compose() {
+                const fns = [].slice.call(arguments);
+
+                return function(start) {
+                    return fns.reduce((acc, fn) => {
+                        return fn(acc);
+                    }, start);
+                }
+            }
+
+            function getRandomNumbersArray(length) {
+                return Array.from(crypto.getRandomValues(new Uint32Array(length)));
+            }
+
+            function getCanvasElement() {
+                return document.getElementById('canvas');
+            }
+
+            class Glyph {
+                constructor(code, col, row) {
+                    this.char = String.fromCharCode(code); // % 0x1f222);
+                    this.col = col;
+                    this.row = row;
+                }
+
+                draw(ctx) {
+                    const sizes = ctx[COLUMNS_MEASURE]();
+
+                    if (this.col > sizes.cols || this.row > sizes.rows) {
+                        return;
+                    }
+
+                    const x = sizes.charWidth * this.col;
+                    const y = sizes.charHeight * this.row;
+
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillText(this.char, x, y);
+                }
+            }
+
+            class Column {
+                static random(length, col) {
+                    return new Column(getRandomNumbersArray(length), col);
+                }
+
+                constructor(glyphCodes, col) {
+                    this.glyphs = glyphCodes.map(function (code, row) {
+                        return new Glyph(code, col, row);
+                    });
+                    this.rendered = Array.from({ length: glyphCodes.length });
+                    this.col = col;
+                }
+
+                draw(ctx) {
+                    const renderedFlags = this.rendered;
+                    const sizes = ctx[COLUMNS_MEASURE]();
+
+                    this.glyphs.forEach(function (glyph, i) {
+                        if (!renderedFlags[i]) {
+                            glyph.draw(ctx);
+                            renderedFlags[i] = true;
+                        }
+                    });
+                }
+
+                expand(glyphCodes) {
+                    const col = this.col;
+                    const offset = this.glyphs.length;
+
+                    this.glyphs = this.glyphs.concat(
+                        glyphCodes.map(function (code, row) {
+                            return new Glyph(code, col, row + offset);
+                        })
+                    );
+                }
+            }
+
+            function resizeCanvas(canvasNode) {
+                function resize() {
+                    canvasNode.width = window.innerWidth;
+                    canvasNode.height = window.innerHeight;
+                }
+
+                window.addEventListener('resize', resize);
+                resize();
+
+                return canvasNode;
+            }
+
+            function getDrawContext(canvasNode) {
+                return canvasNode.getContext('2d');
+            }
+
+            function attachTextColumnRenderer(ctx) {
+                ctx[COLUMNS_MEASURE] = function() {
+                    const size = ctx.measureText('W');
+                    const charWidth = size.width + 2;
+                    const charHeight = size.fontBoundingBoxAscent + 2;
+
+                    const values = {
+                        cols: Math.ceil(canvas.clientWidth / charWidth), 
+                        rows: Math.ceil(canvas.clientHeight / charHeight),
+                        charWidth,
+                        charHeight,
+                    };
+
+                    return values;
+                };
+
+                return ctx;
+            }
+
+            function configureDrawContext(ctx) {
+                ctx.fillStyle = '#00ff00';
+                ctx.font = '22px sans-serif';
+
+                return ctx;
+            }
+
+            function render(ctx) {
+                const sizes = ctx[COLUMNS_MEASURE]();
+                let columns = Array.from({ length: sizes.cols });
+
+                window.addEventListener('resize', function() {
+                    const sizes = ctx[COLUMNS_MEASURE]();
+
+                    if (sizes.cols > columns.length) {
+                        columns = [...columns, ...Array.from({ length: sizes.col - columns.length })]
+                    } else {
+                        columns = columns.slice(0, sizes.cols);
+                    }
+                });
+
+                function loop() {
+                    requestAnimationFrame(loop);
+                    
+                    ctx.fillStyle = '#00000008';
+                    ctx.fillRect(0, 0, ctx.canvas.clientWidth, ctx.canvas.clientHeight);
+                    
+                    const sizes = ctx[COLUMNS_MEASURE]();
+
+                    columns = columns.map(function (column, i) {
+                        if (!column) {
+                            if (Math.random() > POWER_NEW_LINE) {
+                                return Column.random(1, i); 
+                            }
+
+                            return column;
+                        }
+
+                        column.draw(ctx);
+
+                        if (column.glyphs.length >= sizes.rows) {
+                            return undefined;
+                        } else if (Math.random() > POWER_LINE_EXPAND) {
+                            column.expand(getRandomNumbersArray(1))
+                        }
+                        
+                        return column;        
+                    });
+                }
+
+                loop();
+            }
+
+            document.addEventListener(
+                'DOMContentLoaded',
+                compose(
+                    getCanvasElement,
+                    resizeCanvas,
+                    getDrawContext,
+                    attachTextColumnRenderer,
+                    configureDrawContext,
+                    render
+                )
+            );
+        </script>
+    </body>
+</html>
